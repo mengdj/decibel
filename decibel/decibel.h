@@ -83,6 +83,8 @@
 #pragma comment(lib,"comctl32.lib")
 
 #include <shlobj_core.h>
+#include "cJSON.h"
+
 #define MAJ_VER					1
 #define MID_VER					1
 #define MIN_VER					0

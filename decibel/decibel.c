@@ -162,7 +162,7 @@ VOID					CenterWindow(HWND);
 BOOL					CaptureAndBuildPng(HWND, CONST CHAR*);
 BOOL					CaptureForm(HWND, LPBYTE, INT*, INT*, INT*, BOOL);
 HRESULT					CreateShortcut();
-VOID NTAPI				CheckUpdateVerAdv(PTP_CALLBACK_INSTANCE, PVOID);
+VOID NTAPI				CheckUpdateApp(PTP_CALLBACK_INSTANCE, PVOID);
 ATOM					DecRegisterClass(HINSTANCE);
 void					DecibelWaveInProc(HWAVEIN, UINT, DWORD, DWORD, DWORD);
 VOID					DecLog(const char* format, ...);
@@ -551,41 +551,74 @@ BOOL	IsNeedUpdate(const WCHAR* pVer) {
 }
 
 //检查版本号
-size_t CheckVer(VOID* ptr, size_t size, size_t nmemb, VOID* stream) {
+size_t CheckAppProcess(VOID* ptr, size_t size, size_t nmemb, VOID* stream) {
 	//9.9.9
-	if (nmemb == 6) {
-		WCHAR wSVer[MAX_LOADSTRING] = { 0 }, wDVer[MAX_LOADSTRING] = { 0 };
-		Char2WChar(ptr, wSVer);
-		CopyMemory(wDVer, wSVer, MAX_LOADSTRING);
-		szNeedUpdate = IsNeedUpdate(wSVer);
-		if (szNeedUpdate) {
-			WCHAR wMsg[MAX_LOADSTRING] = { 0 };
-			WritePrivateProfileStringLocal(TEXT("DEC"), TEXT("version"), wDVer);
-			swprintf_s(wMsg, MAX_LOADSTRING, TEXT("检测到新版本:%s,建议尽快更新"), wDVer);
-			WriteMsgContent(0, 5000, RGB(0xFF, 0xFF, 0xFF), RGB(0x82, 0x84, 0xFD), wMsg, TRUE);
+	cJSON* pApp = cJSON_Parse(ptr);
+	if (pApp != NULL) {
+		cJSON* pProcess = NULL;
+		//获取版本号
+		if ((pProcess = cJSON_GetObjectItem(pApp, "version"))!=NULL) {
+			WCHAR wSVer[MAX_LOADSTRING] = { 0 }, wDVer[MAX_LOADSTRING] = { 0 };
+			Char2WChar(pProcess->valuestring, wSVer);
+			CopyMemory(wDVer, wSVer, MAX_LOADSTRING);
+			if ((szNeedUpdate = IsNeedUpdate(wSVer))) {
+				WCHAR wMsg[MAX_LOADSTRING] = { 0 };
+				WritePrivateProfileStringLocal(TEXT("DEC"), TEXT("version"), wDVer);
+				swprintf_s(wMsg, MAX_LOADSTRING, TEXT("检测到新版本:%s,建议尽快更新"), wDVer);
+				WriteMsgContent(0, 5000, RGB(0xFF, 0xFF, 0xFF), RGB(0x82, 0x84, 0xFD), wMsg, TRUE);
+			}
 		}
+		//获取广告信息
+		if ((pProcess = cJSON_GetObjectItem(pApp, "advertisement")) != NULL) {
+			INT iSize = cJSON_GetArraySize(pProcess);
+			if (iSize) {
+				cJSON* pAdv = NULL,*pTmpAdv;
+				CHAR* cSrc = NULL, * cLink = NULL;
+				INT iDelay = 3000, iWidth = 0, iHeight = 0, iStart = 0, iEnd = 0, iTicket = GetTickCount();
+				for (int i = 0; i < iSize; i++) {
+					if ((pTmpAdv = cJSON_GetArrayItem(pProcess, i)) != NULL) {
+						iStart = cJSON_GetObjectItem(pTmpAdv, "start")->valueint;
+						iEnd = cJSON_GetObjectItem(pTmpAdv, "end")->valueint;
+						if (
+							(iStart && iEnd && (iTicket >= iStart && iTicket <= iEnd)) ||
+							(iStart && !iEnd && iTicket >= iStart) ||
+							(!iStart && iEnd && iTicket <= iEnd)||
+							(!iStart && !iEnd)
+							) {
+							pAdv = pTmpAdv;
+							break;
+						}
+					}
+				}
+				if (pAdv) {
+					//P（待处理）
+				}
+			}
+		}
+		cJSON_Delete(pApp);
+		pApp = NULL;
 	}
 	return size * nmemb;
 }
 
 //检查版本更新信息
-VOID NTAPI	CheckUpdateVerAdv(PTP_CALLBACK_INSTANCE Instance, PVOID Context) {
+VOID NTAPI	CheckUpdateApp(PTP_CALLBACK_INSTANCE Instance, PVOID Context) {
 	CURLcode res = CURL_LAST;
 	if (!szNeedUpdate) {
 		CURL* curl = curl_easy_init();
 		if (curl) {
-			if ((res = curl_easy_setopt(curl, CURLOPT_URL, "https://raw.githubusercontent.com/mengdj/decibel/master/Release/ver")) == CURLE_OK) {
-				if ((res = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CheckVer)) == CURLE_OK) {
+			if ((res = curl_easy_setopt(curl, CURLOPT_URL, "https://raw.githubusercontent.com/mengdj/decibel/master/Release/app.json")) == CURLE_OK) {
+				if ((res = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CheckAppProcess)) == CURLE_OK) {
 					if ((res = curl_easy_perform(curl)) != CURLE_OK) {
-						LOG_TRACE("CheckUpdateVerAdv(curl_easy_perform):%s", curl_easy_strerror(res));
+						LOG_TRACE("CheckUpdateApp(curl_easy_perform):%s", curl_easy_strerror(res));
 					}
 				}
 				else {
-					LOG_TRACE("CheckUpdateVerAdv(CURLOPT_WRITEFUNCTION):%s", curl_easy_strerror(res));
+					LOG_TRACE("CheckUpdateApp(CURLOPT_WRITEFUNCTION):%s", curl_easy_strerror(res));
 				}
 			}
 			else {
-				LOG_TRACE("CheckUpdateVerAdv(CURLOPT_URL):%s", curl_easy_strerror(res));
+				LOG_TRACE("CheckUpdateApp(CURLOPT_URL):%s", curl_easy_strerror(res));
 			}
 			curl_easy_cleanup(curl);
 			curl = NULL;
@@ -785,7 +818,7 @@ BOOL PreProcessCreate(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 			}
 		}
 	}
-	TrySubmitThreadpoolCallback(CheckUpdateVerAdv, NULL, NULL);
+	TrySubmitThreadpoolCallback(CheckUpdateApp, NULL, NULL);
 	WCHAR wShortcut[MAX_LOADSTRING] = { 0 };
 	if (GetPrivateProfileStringLocal(TEXT("DEC"), TEXT("shortcut"), TEXT("Y"), wShortcut, MAX_LOADSTRING)) {
 		if (lstrcmp(wShortcut, TEXT("Y")) == 0) {

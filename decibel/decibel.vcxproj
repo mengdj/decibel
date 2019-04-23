@@ -165,6 +165,7 @@
   <ItemGroup>
     <ClInclude Include="audio.h" />
     <ClInclude Include="audio_portaudio.h" />
+    <ClInclude Include="cJSON.h" />
     <ClInclude Include="decibel.h" />
     <ClInclude Include="gl.h" />
     <ClInclude Include="kiss_fft.h" />
@@ -188,6 +189,7 @@
   <ItemGroup>
     <ClCompile Include="audio.c" />
     <ClCompile Include="audio_portaudio.c" />
+    <ClCompile Include="cJSON.c" />
     <ClCompile Include="decibel.c" />
     <ClCompile Include="gl.c" />
     <ClCompile Include="kiss_fft.c" />

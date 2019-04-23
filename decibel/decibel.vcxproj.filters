@@ -78,6 +78,9 @@
     <ClInclude Include="stb_image_resize.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="cJSON.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="decibel.c">
@@ -108,6 +111,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="kiss_fft.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="cJSON.c">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

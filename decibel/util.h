@@ -1,6 +1,6 @@
 #pragma once
 #include "stdafx.h"
-
+#include "md5.h"
 #ifndef DECIAL_UTIL_H
 #define DECIAL_UTIL_H
 #define MATH_PI				(3.1415926f)
@@ -17,8 +17,29 @@ INT TableSizeFor(INT iCap) {
 	iCap |= ((unsigned int)iCap) >> 16;
 	return (iCap < 0) ? 1 : (iCap >= MAXIMUM_CAPACITY) ? MAXIMUM_CAPACITY : iCap + 1;
 }
+VOID MD5(CONST CHAR * pIn, CHAR * pOut, INT iInSize) {
+	uint8_t result[16];
+	md5((uint8_t*)pIn, iInSize, result);
+	char buffer[2] = { 0 };
+	for (int i = 0; i < 16; i++) {
+		sprintf_s(buffer, 3, "%2.2x", result[i]);
+		memcpy(pOut, buffer, 2);
+		pOut += 2;
+	}
+}
 
-INT Char2WChar(const char* cchar, WCHAR *wchar) {
+time_t SystemTimeToTime_tx(const SYSTEMTIME * pst) {
+	struct tm  temptm = { pst->wSecond,pst->wMinute,pst->wHour,pst->wDay,pst->wMonth - 1,pst->wYear - 1900,pst->wDayOfWeek,0,0 };
+	return mktime(&temptm);
+}
+
+time_t CurrentLocalTime_tx() {
+	SYSTEMTIME stLocalTime = { 0 };
+	GetLocalTime(&stLocalTime);
+	return SystemTimeToTime_tx(&stLocalTime);
+}
+
+INT Char2WChar(const char* cchar, WCHAR * wchar) {
 	INT ret = 0;
 	ret = MultiByteToWideChar(CP_ACP, 0, cchar, strlen(cchar), NULL, 0);
 	MultiByteToWideChar(CP_ACP, 0, cchar, strlen(cchar), wchar, ret);
@@ -26,7 +47,7 @@ INT Char2WChar(const char* cchar, WCHAR *wchar) {
 	return ret;
 }
 
-INT WChar2Char(CONST WCHAR *wchar, CHAR *cchar) {
+INT WChar2Char(CONST WCHAR * wchar, CHAR * cchar) {
 	INT ret = 0;
 	ret = WideCharToMultiByte(CP_ACP, 0, wchar, -1, NULL, 0, NULL, NULL);
 	WideCharToMultiByte(CP_ACP, 0, wchar, -1, cchar, ret, NULL, NULL);
@@ -36,6 +57,7 @@ INT WChar2Char(CONST WCHAR *wchar, CHAR *cchar) {
 INT LinearEaseIn(INT t, INT iBegin, INT iEnd, INT iDulay) {
 	return iEnd * t / iDulay + iBegin;
 }
+
 
 VOID PrivateProfileStringCfg(LPWSTR lpReturnedCfg, DWORD nSize) {
 	GetCurrentDirectory(nSize, lpReturnedCfg);
@@ -52,6 +74,85 @@ BOOL WritePrivateProfileStringLocal(LPCWSTR lpAppName, LPCWSTR lpKeyName, LPCWST
 	WCHAR wDir[MAX_PATH] = { 0 };
 	PrivateProfileStringCfg(wDir, MAX_PATH);
 	return WritePrivateProfileString(lpAppName, lpKeyName, lpString, wDir);
+}
+
+INT ReadLocalCache(CHAR * cKey, LPBYTE pOut, INT iExpire) {
+	DWORD iNumberOfBytesRead = 0;
+	WCHAR wDir[MAX_PATH] = { 0 }, wKey[64];
+	CHAR cKeyMd5[64] = { 0 };
+	MD5(cKey, cKeyMd5, strlen(cKey));
+	Char2WChar(cKeyMd5, wKey);
+	GetCurrentDirectory(MAX_PATH, wDir);
+	swprintf_s(wDir, MAX_PATH, TEXT("%s\\cache\\%s"), wDir, wKey);
+	HANDLE hFile = CreateFile(
+		wDir,
+		GENERIC_READ,
+		FILE_SHARE_WRITE,
+		NULL,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL
+	);
+	if (hFile != INVALID_HANDLE_VALUE) {
+		INT iFileSize = GetFileSize(hFile, NULL);
+		if (iFileSize) {
+			BOOL bNext = TRUE;
+			if (iExpire != 0) {
+				FILETIME ftCreate, ftAccess, ftWrite;
+				SYSTEMTIME stUTC, stLocal;
+				INT iCurrentTimeTx = CurrentLocalTime_tx(), iFileWriteTimeTx = 0;
+				if (GetFileTime(hFile, &ftCreate, &ftAccess, &ftWrite)) {
+					FileTimeToSystemTime(&ftWrite, &stUTC);
+					SystemTimeToTzSpecificLocalTime(NULL, &stUTC, &stLocal);
+					iFileWriteTimeTx = SystemTimeToTime_tx(&stLocal);
+					if ((iCurrentTimeTx - iFileWriteTimeTx) >= iExpire) {
+						bNext = FALSE;
+					}
+				}
+				else {
+					bNext = FALSE;
+				}
+			}
+			if (bNext) {
+				if (!ReadFile(hFile, pOut, iFileSize, &iNumberOfBytesRead, NULL)) {
+					iNumberOfBytesRead = 0;
+				}
+			}
+		}
+		CloseHandle(hFile);
+	}
+	return iNumberOfBytesRead;
+}
+
+INT WriteLocalCache(CHAR * cKey, LPBYTE data, INT iSize) {
+	DWORD ret = 0;
+	WCHAR wDir[MAX_PATH] = { 0 }, wKey[64];;
+	CHAR cKeyMd5[64] = { 0 };
+	MD5(cKey, cKeyMd5, strlen(cKey));
+	Char2WChar(cKeyMd5, wKey);
+	GetCurrentDirectory(MAX_PATH, wDir);
+	swprintf_s(wDir, MAX_PATH, TEXT("%s\\cache\\"), wDir);
+	DWORD dwAttr = GetFileAttributes(wDir);
+	if (dwAttr == INVALID_FILE_ATTRIBUTES) {
+		CreateDirectory(wDir, NULL);
+	}
+	swprintf_s(wDir, MAX_PATH, TEXT("%s\\%s"), wDir, wKey);
+	HANDLE hFile = CreateFile(
+		wDir,
+		GENERIC_WRITE | GENERIC_READ,
+		FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL,
+		OPEN_ALWAYS,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL
+	);
+	if (hFile != INVALID_HANDLE_VALUE) {
+		if (!WriteFile(hFile, data, iSize, &ret, NULL)) {
+			ret = 0;
+		}
+		CloseHandle(hFile);
+	}
+	return TRUE;
 }
 
 //提升读写权限
@@ -75,7 +176,7 @@ BOOL EnableDebugPriv() {
 	return TRUE;
 }
 
-INT LoadResourceFromZip(mz_zip_archive *pZip, const char* pName, LPVOID *pBuff) {
+INT LoadResourceFromZip(mz_zip_archive * pZip, const char* pName, LPVOID * pBuff) {
 	INT iIndex = 0, iSize = 0;
 	if ((iIndex = mz_zip_reader_locate_file(pZip, pName, NULL, 0)) >= 0) {
 		mz_zip_archive_file_stat mzafs = { 0 };
@@ -96,7 +197,7 @@ INT LoadResourceFromZip(mz_zip_archive *pZip, const char* pName, LPVOID *pBuff) 
 /**
 	获取资源文件内容
 */
-DWORD LoadResourceFromRes(HINSTANCE hInstace, int resId, LPVOID* outBuff, LPWSTR resType) {
+DWORD LoadResourceFromRes(HINSTANCE hInstace, int resId, LPVOID * outBuff, LPWSTR resType) {
 	HRSRC hRsrc = FindResource(hInstace, MAKEINTRESOURCE(resId), resType);
 	if (hRsrc != NULL) {
 		DWORD dwSize = SizeofResource(hInstace, hRsrc);
@@ -120,7 +221,7 @@ DWORD LoadResourceFromRes(HINSTANCE hInstace, int resId, LPVOID* outBuff, LPWSTR
 }
 
 //BGRA到RGBA(截图时需要需要设置FALSE,bTranslate)
-VOID BGRA2RGBA(CONST UINT* pIn, UINT* pOut, INT iW, INT iH, BOOL bTranslate) {
+VOID BGRA2RGBA(CONST UINT * pIn, UINT * pOut, INT iW, INT iH, BOOL bTranslate) {
 	LPBYTE pTmpOut = pOut;
 	LPBYTE pTmpIn = pIn;
 	INT iWH = iW * iH;
@@ -193,7 +294,7 @@ BOOL WINAPI AlphaBitBlt(HDC hDC, int nDestX, int nDestY, int dwWidth, int dwHeig
 
 	COLORREF* pSrcBits = NULL;
 	HBITMAP hSrcDib = CreateDIBSection(
-		hSrcDC, lpbiSrc, DIB_RGB_COLORS, (void **)&pSrcBits,
+		hSrcDC, lpbiSrc, DIB_RGB_COLORS, (void**)& pSrcBits,
 		NULL, NULL);
 
 	if ((NULL == hSrcDib) || (NULL == pSrcBits))
@@ -232,7 +333,7 @@ BOOL WINAPI AlphaBitBlt(HDC hDC, int nDestX, int nDestY, int dwWidth, int dwHeig
 	lpbiDest->bmiHeader.biClrImportant = 0;
 
 	COLORREF* pDestBits = NULL;
-	HBITMAP hDestDib = CreateDIBSection(hDC, lpbiDest, DIB_RGB_COLORS, (void **)&pDestBits, NULL, NULL);
+	HBITMAP hDestDib = CreateDIBSection(hDC, lpbiDest, DIB_RGB_COLORS, (void**)& pDestBits, NULL, NULL);
 
 	if ((NULL == hDestDib) || (NULL == pDestBits)) {
 		free(lpbiSrc);

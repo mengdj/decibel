@@ -81,6 +81,9 @@
     <ClInclude Include="cJSON.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="md5.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="decibel.c">

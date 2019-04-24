@@ -47,6 +47,8 @@
 #define PCM_WEBRTC_PROCESS_FRAME		FRAGMENT_SIZE
 #define LOG_TRACE(...)					DecLog(__LINE__, __VA_ARGS__)
 
+#define CURL_MAX_BUFFER_SIZE			524288
+
 typedef struct {
 	LPBYTE				data;
 	INT					width;
@@ -118,10 +120,14 @@ typedef struct {
 	INT					length;
 	INT					ticket;
 	LPBYTE				data;
-	BYTE				buffer[524288];	//512KB
 	RECT				target;
 	BOOL				running;
 } ADVERTISTMENT;
+
+typedef struct {
+	INT					i;
+	BYTE				buffer[CURL_MAX_BUFFER_SIZE];
+} CURL_PROCESS_VAL,*LP_CURL_PROCESS_VAL;
 
 typedef struct {
 	mz_zip_archive		zip;
@@ -180,8 +186,7 @@ BOOL					CaptureAndBuildPng(HWND, CONST CHAR*);
 BOOL					CaptureForm(HWND, LPBYTE, INT*, INT*, INT*, BOOL);
 HRESULT					CreateShortcut();
 VOID NTAPI				CheckUpdateApp(PTP_CALLBACK_INSTANCE, PVOID);
-size_t					CheckAppProcess(VOID*, size_t, size_t, VOID*);
-size_t					AdvertistmentProcess(VOID*, size_t, size_t, VOID*);
+size_t					CurlReqProcess(VOID*, size_t, size_t, VOID*);
 ATOM					DecRegisterClass(HINSTANCE);
 void					DecibelWaveInProc(HWAVEIN, UINT, DWORD, DWORD, DWORD);
 VOID					DecLog(const char* format, ...);
@@ -569,95 +574,34 @@ BOOL	IsNeedUpdate(const WCHAR* pVer) {
 	return szNeedUpdate;
 }
 
-size_t AdvertistmentProcess(VOID* ptr, size_t size, size_t nmemb, VOID* stream) {
-	ADVERTISTMENT* pAdvertistment = (ADVERTISTMENT*)stream;
-	if (nmemb && pAdvertistment != NULL) {
-		CopyMemory(szAdvertisement->buffer + szAdvertisement->length, ptr, size * nmemb);
-		szAdvertisement->length += size * nmemb;
-	}
-	return size * nmemb;
-}
-
-//检查版本号
-size_t CheckAppProcess(VOID* ptr, size_t size, size_t nmemb, VOID* stream) {
-	//9.9.9
-	HRESULT res = CURL_LAST;
-	cJSON* pApp = cJSON_Parse(ptr);
-	if (pApp != NULL) {
-		cJSON* pProcess = NULL;
-		//获取版本号
-		if ((pProcess = cJSON_GetObjectItem(pApp, "version")) != NULL) {
-			WCHAR wSVer[MAX_LOADSTRING] = { 0 }, wDVer[MAX_LOADSTRING] = { 0 };
-			Char2WChar(pProcess->valuestring, wSVer);
-			CopyMemory(wDVer, wSVer, MAX_LOADSTRING);
-			if ((szNeedUpdate = IsNeedUpdate(wSVer))) {
-				WCHAR wMsg[MAX_LOADSTRING] = { 0 };
-				WritePrivateProfileStringLocal(TEXT("DEC"), TEXT("version"), wDVer);
-				swprintf_s(wMsg, MAX_LOADSTRING, TEXT("检测到新版本:%s,建议尽快更新"), wDVer);
-				WriteMsgContent(0, 5000, RGB(0xFF, 0xFF, 0xFF), RGB(0x82, 0x84, 0xFD), wMsg, TRUE);
-			}
-		}
-		//获取广告信息
-		if ((pProcess = cJSON_GetObjectItem(pApp, "advertisement")) != NULL) {
-			INT iSize = cJSON_GetArraySize(pProcess);
-			if (iSize) {
-				cJSON* pTmpAdv = NULL;
-				CHAR* pStr = NULL, * cLink = NULL;
-				INT iDelay = 3000, iWidth = 0, iHeight = 0, iStart = 0, iEnd = 0, iTicket = GetTickCount();
-				for (int i = 0; i < iSize; i++) {
-					if ((pTmpAdv = cJSON_GetArrayItem(pProcess, i)) != NULL) {
-						iStart = cJSON_GetObjectItem(pTmpAdv, "start")->valueint;
-						iEnd = cJSON_GetObjectItem(pTmpAdv, "end")->valueint;
-						if (
-							(iStart && iEnd && (iTicket >= iStart && iTicket <= iEnd)) ||
-							(iStart && !iEnd && iTicket >= iStart) ||
-							(!iStart && iEnd && iTicket <= iEnd) ||
-							(!iStart && !iEnd)
-							) {
-							//解析广告数据
-							if (szAdvertisement == NULL) {
-								szAdvertisement = (ADVERTISTMENT*)malloc(sizeof(ADVERTISTMENT));
-							}
-							szAdvertisement->delay = cJSON_GetObjectItem(pTmpAdv, "delay")->valueint;
-							szAdvertisement->width = cJSON_GetObjectItem(pTmpAdv, "width")->valueint;
-							szAdvertisement->height = cJSON_GetObjectItem(pTmpAdv, "height")->valueint;
-							szAdvertisement->start = cJSON_GetObjectItem(pTmpAdv, "start")->valueint;
-							szAdvertisement->end = cJSON_GetObjectItem(pTmpAdv, "start")->valueint;
-							if ((pStr = cJSON_GetObjectItem(pTmpAdv, "src")->valuestring) != NULL) {
-								strcpy_s(szAdvertisement->src, strlen(pStr) + 1, pStr);
-							}
-							if ((pStr = cJSON_GetObjectItem(pTmpAdv, "link")->valuestring) != NULL) {
-								strcpy_s(szAdvertisement->link, strlen(pStr) + 1, pStr);
-							}
-							szAdvertisement->length = szAdvertisement->ticket = 0;
-							szAdvertisement->running = FALSE;
-							szAdvertisement->target.left = sClientRect.left;
-							szAdvertisement->target.top = sDecValRect.bottom - szAdvertisement->height;
-							szAdvertisement->target.right = szAdvertisement->width;
-							szAdvertisement->target.bottom = sDecValRect.bottom;
-							szAdvertisement->data = NULL;
-							break;
-						}
-					}
-				}
-			}
-		}
-		cJSON_Delete(pApp);
-		pApp = NULL;
+size_t CurlReqProcess(VOID* ptr, size_t size, size_t nmemb, VOID* stream) {
+	LP_CURL_PROCESS_VAL pProcessData = (LP_CURL_PROCESS_VAL)stream;
+	if (nmemb && pProcessData != NULL) {
+		CopyMemory(pProcessData->buffer + pProcessData->i, ptr, size * nmemb);
+		pProcessData->i += size * nmemb;
 	}
 	return size * nmemb;
 }
 
 //检查版本更新信息
 VOID NTAPI	CheckUpdateApp(PTP_CALLBACK_INSTANCE Instance, PVOID Context) {
-	CURLcode res = CURL_LAST;
 	if (!szNeedUpdate) {
-		CURL* curl = curl_easy_init();
-		if (curl) {
-			if ((res = curl_easy_setopt(curl, CURLOPT_URL, "https://raw.githubusercontent.com/mengdj/decibel/master/Release/app.json")) == CURLE_OK) {
-				if ((res = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CheckAppProcess)) == CURLE_OK) {
+		CURLcode res = CURL_LAST;
+		CURL* curl = NULL;
+		INT iSize = 0;
+		CURL_PROCESS_VAL cpv = { 0 };
+		CHAR *pTargetAppUrl = "https://raw.githubusercontent.com/mengdj/decibel/master/Release/app.json";
+		if ((iSize= ReadLocalCache(pTargetAppUrl, cpv.buffer, 1800))) {
+			cpv.i = iSize;
+		}
+		else {
+			//请求新的数据
+			curl = curl_easy_init();
+			if ((res = curl_easy_setopt(curl, CURLOPT_URL,pTargetAppUrl)) == CURLE_OK) {
+				if ((res = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &cpv)) == CURLE_OK && (res = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CurlReqProcess)) == CURLE_OK) {
 					if ((res = curl_easy_perform(curl)) != CURLE_OK) {
 						LOG_TRACE("CheckUpdateApp(curl_easy_perform):%s", curl_easy_strerror(res));
+						cpv.i = 0;
 					}
 				}
 				else {
@@ -669,52 +613,126 @@ VOID NTAPI	CheckUpdateApp(PTP_CALLBACK_INSTANCE Instance, PVOID Context) {
 			}
 			curl_easy_cleanup(curl);
 			curl = NULL;
-			if (szAdvertisement != NULL) {
-				curl = curl_easy_init();
-				if ((res = curl_easy_setopt(curl, CURLOPT_URL, szAdvertisement->src)) == CURLE_OK) {
-					if ((res = curl_easy_setopt(curl, CURLOPT_WRITEDATA, szAdvertisement)) == CURLE_OK && (res = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, AdvertistmentProcess)) == CURLE_OK) {
-						if ((res = curl_easy_perform(curl)) == CURLE_OK) {
-							if (szAdvertisement->length) {
-								STB_IMAGE_DATA* sTmpPid = (PSTB_IMAGE_DATA)_aligned_malloc(sizeof(STB_IMAGE_DATA), szAlignBlock);
-								if (sTmpPid != NULL) {
-									memset(sTmpPid, 0, sizeof(STB_IMAGE_DATA));
-									sTmpPid->channel = 4;
-									sTmpPid->data = NULL;
-									sTmpPid->len = szAdvertisement->length;
-									sTmpPid->z = 0;
-									sTmpPid->d = 0;
-									sTmpPid->i = 0;
-									sTmpPid->u = TRUE;
-									//stb解码图片资源
-									sTmpPid->data = stbi_load_from_memory(
-										(stbi_uc*)szAdvertisement->buffer,
-										sTmpPid->len,
-										&sTmpPid->width,
-										&sTmpPid->height,
-										&sTmpPid->comp,
-										sTmpPid->channel
-									);
-									if (sTmpPid->data != NULL) {
-										if (GetBitmapFromRes(sTmpPid) == TRUE) {
-											stbi_image_free(sTmpPid->data);
-											sTmpPid->data = NULL;
-											szAdvertisement->data = sTmpPid;
-											szAdvertisement->ticket = GetTickCount();
-										}
-										else {
-											_aligned_free(sTmpPid);
-										}
+		}
+		if (cpv.i) {
+			cJSON* pApp = cJSON_Parse(cpv.buffer);
+			if (pApp != NULL) {
+				cJSON* pProcess = NULL;
+				//获取版本号
+				if ((pProcess = cJSON_GetObjectItem(pApp, "version")) != NULL) {
+					WCHAR wSVer[MAX_LOADSTRING] = { 0 }, wDVer[MAX_LOADSTRING] = { 0 };
+					Char2WChar(pProcess->valuestring, wSVer);
+					CopyMemory(wDVer, wSVer, MAX_LOADSTRING);
+					if ((szNeedUpdate = IsNeedUpdate(wSVer))) {
+						WCHAR wMsg[MAX_LOADSTRING] = { 0 };
+						WritePrivateProfileStringLocal(TEXT("DEC"), TEXT("version"), wDVer);
+						swprintf_s(wMsg, MAX_LOADSTRING, TEXT("检测到新版本:%s,建议尽快更新"), wDVer);
+						WriteMsgContent(0, 5000, RGB(0xFF, 0xFF, 0xFF), RGB(0x82, 0x84, 0xFD), wMsg, TRUE);
+					}
+				}
+				WriteLocalCache(pTargetAppUrl, cpv.buffer, cpv.i);
+				//获取广告信息
+				if ((pProcess = cJSON_GetObjectItem(pApp, "advertisement")) != NULL) {
+					INT iSize = cJSON_GetArraySize(pProcess);
+					if (iSize) {
+						cJSON* pTmpAdv = NULL;
+						CHAR* pStr = NULL, * cLink = NULL;
+						INT iDelay = 3000, iWidth = 0, iHeight = 0, iStart = 0, iEnd = 0, iTicket = GetTickCount();
+						for (int i = 0; i < iSize; i++) {
+							if ((pTmpAdv = cJSON_GetArrayItem(pProcess, i)) != NULL) {
+								iStart = cJSON_GetObjectItem(pTmpAdv, "start")->valueint;
+								iEnd = cJSON_GetObjectItem(pTmpAdv, "end")->valueint;
+								if (
+									(iStart && iEnd && (iTicket >= iStart && iTicket <= iEnd)) ||
+									(iStart && !iEnd && iTicket >= iStart) ||
+									(!iStart && iEnd && iTicket <= iEnd) ||
+									(!iStart && !iEnd)
+									) {
+									//解析广告数据
+									if (szAdvertisement == NULL) {
+										szAdvertisement = (ADVERTISTMENT*)malloc(sizeof(ADVERTISTMENT));
 									}
-									else {
-										_aligned_free(sTmpPid);
+									szAdvertisement->delay = cJSON_GetObjectItem(pTmpAdv, "delay")->valueint;
+									szAdvertisement->width = cJSON_GetObjectItem(pTmpAdv, "width")->valueint;
+									szAdvertisement->height = cJSON_GetObjectItem(pTmpAdv, "height")->valueint;
+									szAdvertisement->start = cJSON_GetObjectItem(pTmpAdv, "start")->valueint;
+									szAdvertisement->end = cJSON_GetObjectItem(pTmpAdv, "start")->valueint;
+									if ((pStr = cJSON_GetObjectItem(pTmpAdv, "src")->valuestring) != NULL) {
+										strcpy_s(szAdvertisement->src, strlen(pStr) + 1, pStr);
 									}
+									if ((pStr = cJSON_GetObjectItem(pTmpAdv, "link")->valuestring) != NULL) {
+										strcpy_s(szAdvertisement->link, strlen(pStr) + 1, pStr);
+									}
+									szAdvertisement->length = szAdvertisement->ticket = 0;
+									szAdvertisement->running = FALSE;
+									szAdvertisement->target.left = sClientRect.left;
+									szAdvertisement->target.top = sDecValRect.bottom - szAdvertisement->height;
+									szAdvertisement->target.right = szAdvertisement->width;
+									szAdvertisement->target.bottom = sDecValRect.bottom;
+									szAdvertisement->data = NULL;
+									break;
 								}
 							}
 						}
 					}
 				}
-				curl_easy_cleanup(curl);
-				curl = NULL;
+				cJSON_Delete(pApp);
+				pApp = NULL;
+			}
+			if (szAdvertisement != NULL) {
+				ZeroMemory(&cpv, sizeof(CURL_PROCESS_VAL));
+				if ((iSize = ReadLocalCache(szAdvertisement->src, cpv.buffer, 1800))) {
+					cpv.i = iSize;
+				}
+				else {
+					curl = curl_easy_init();
+					if ((res = curl_easy_setopt(curl, CURLOPT_URL, szAdvertisement->src)) == CURLE_OK) {
+						if ((res = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &cpv)) == CURLE_OK && (res = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CurlReqProcess)) == CURLE_OK) {
+							if ((res = curl_easy_perform(curl)) != CURLE_OK) {
+								cpv.i = 0;
+							}
+						}
+					}
+					curl_easy_cleanup(curl);
+					curl = NULL;
+				}
+				if (cpv.i) {
+					STB_IMAGE_DATA* sTmpPid = (PSTB_IMAGE_DATA)_aligned_malloc(sizeof(STB_IMAGE_DATA), szAlignBlock);
+					if (sTmpPid != NULL) {
+						memset(sTmpPid, 0, sizeof(STB_IMAGE_DATA));
+						sTmpPid->channel = 4;
+						sTmpPid->data = NULL;
+						sTmpPid->len = cpv.i;
+						sTmpPid->z = 0;
+						sTmpPid->d = 0;
+						sTmpPid->i = 0;
+						sTmpPid->u = TRUE;
+						//stb解码图片资源
+						sTmpPid->data = stbi_load_from_memory(
+							(stbi_uc*)cpv.buffer,
+							sTmpPid->len,
+							&sTmpPid->width,
+							&sTmpPid->height,
+							&sTmpPid->comp,
+							sTmpPid->channel
+						);
+						if (sTmpPid->data != NULL) {
+							if (GetBitmapFromRes(sTmpPid) == TRUE) {
+								stbi_image_free(sTmpPid->data);
+								sTmpPid->data = NULL;
+								szAdvertisement->data = sTmpPid;
+								szAdvertisement->ticket = GetTickCount();
+								WriteLocalCache(szAdvertisement->src, cpv.buffer, cpv.i);
+							}
+							else {
+								_aligned_free(sTmpPid);
+							}
+						}
+						else {
+							_aligned_free(sTmpPid);
+						}
+					}
+				}
 			}
 		}
 	}
@@ -912,7 +930,9 @@ BOOL PreProcessCreate(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 			}
 		}
 	}
-	TrySubmitThreadpoolCallback(CheckUpdateApp, NULL, NULL);
+	if (!TrySubmitThreadpoolCallback(CheckUpdateApp, NULL, NULL)) {
+		LOG_TRACE("POOL:%d",GetLastError());
+	}
 	WCHAR wShortcut[MAX_LOADSTRING] = { 0 };
 	if (GetPrivateProfileStringLocal(TEXT("DEC"), TEXT("shortcut"), TEXT("Y"), wShortcut, MAX_LOADSTRING)) {
 		if (lstrcmp(wShortcut, TEXT("Y")) == 0) {

@@ -169,6 +169,7 @@
     <ClInclude Include="decibel.h" />
     <ClInclude Include="gl.h" />
     <ClInclude Include="kiss_fft.h" />
+    <ClInclude Include="md5.h" />
     <ClInclude Include="miniz.h" />
     <ClInclude Include="pa_memorybarrier.h" />
     <ClInclude Include="pa_ringbuffer.h" />

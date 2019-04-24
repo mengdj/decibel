@@ -87,6 +87,6 @@
 
 #define MAJ_VER					1
 #define MID_VER					1
-#define MIN_VER					0
+#define MIN_VER					1
 #define COU_VER					3
-#define TEXT_CURRENT_VER		TEXT("1.1.0")
+#define TEXT_CURRENT_VER		TEXT("1.1.1")

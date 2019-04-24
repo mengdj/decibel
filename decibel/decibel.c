@@ -563,9 +563,9 @@ BOOL	IsNeedUpdate(const WCHAR* pVer) {
 					szNeedUpdate = TRUE;
 					break;
 				}
-				else {
-					break;
-				}
+			}
+			else {
+				break;
 			}
 			ver = wcstok_s(NULL, ".", &next_token);
 			iCouVer++;
@@ -627,7 +627,7 @@ VOID NTAPI	CheckUpdateApp(PTP_CALLBACK_INSTANCE Instance, PVOID Context) {
 						WCHAR wMsg[MAX_LOADSTRING] = { 0 };
 						WritePrivateProfileStringLocal(TEXT("DEC"), TEXT("version"), wDVer);
 						swprintf_s(wMsg, MAX_LOADSTRING, TEXT("检测到新版本:%s,建议尽快更新"), wDVer);
-						WriteMsgContent(0, 5000, RGB(0xFF, 0xFF, 0xFF), RGB(0x82, 0x84, 0xFD), wMsg, TRUE);
+						WriteMsgContent(0, 9000, RGB(0xFF, 0xFF, 0xFF), RGB(0x82, 0x84, 0xFD), wMsg, TRUE);
 					}
 				}
 				WriteLocalCache(pTargetAppUrl, cpv.buffer, cpv.i);

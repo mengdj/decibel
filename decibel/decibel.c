@@ -104,23 +104,23 @@ typedef struct {
 typedef struct {
 	LPBYTE				mem;
 	INT					length;
-	PaUtilRingBuffer* ring[3];
+	PaUtilRingBuffer*	ring[3];
 } RING_BUFF;
 
 typedef struct {
-	CHAR			src[512];
-	CHAR			link[512];
-	INT				delay;
-	INT				width;
-	INT				height;
-	INT				start;
-	INT				end;
-	INT				length;
-	INT				ticket;
-	LPBYTE			data;
-	BYTE			buffer[524288];	//512KB
-	RECT			target;
-	BOOL			running;
+	CHAR				src[512];
+	CHAR				link[512];
+	INT					delay;
+	INT					width;
+	INT					height;
+	INT					start;
+	INT					end;
+	INT					length;
+	INT					ticket;
+	LPBYTE				data;
+	BYTE				buffer[524288];	//512KB
+	RECT				target;
+	BOOL				running;
 } ADVERTISTMENT;
 
 typedef struct {
@@ -130,13 +130,13 @@ typedef struct {
 } MZ_RES_ZIP, * LP_MZ_RES_ZIP;
 
 typedef struct {
-	INT delay;
-	INT start;
-	BOOL display;
-	COLORREF background;
-	COLORREF color;
-	CONST WCHAR msg[MAX_LOADSTRING];
-	SIZE size;
+	INT					delay;
+	INT					start;
+	BOOL				display;
+	COLORREF			background;
+	COLORREF			color;
+	CONST WCHAR			msg[MAX_LOADSTRING];
+	SIZE				size;
 } MSG_TIP;
 
 LP_T_MP3				szRecEnc = NULL;
@@ -167,12 +167,12 @@ HDC						szMemDc = NULL;
 HDC						szPngMemDc = NULL;
 HBITMAP					szCompatibleBitmap = NULL;
 MZ_RES_ZIP				szResZip = { 0 };
-BYTE* szAboutBody = NULL;					//
+BYTE					*szAboutBody = NULL;					//
 MSG_TIP					szMsgTip = { 0 };
 BOOL					szNeedUpdate = FALSE;
 BOOL					szAllowValidate = TRUE;
 CURLcode				szCurlCode = CURL_LAST;
-ADVERTISTMENT* szAdvertisement = NULL;
+ADVERTISTMENT			*szAdvertisement = NULL;
 
 VOID					ClearGifMemory();
 VOID					CenterWindow(HWND);

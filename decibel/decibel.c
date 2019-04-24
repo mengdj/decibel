@@ -2264,7 +2264,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 		}
 		else if (szForm.dec_update_hover && szNeedUpdate) {
 			//更新版本
-			ShellExecute(NULL, TEXT("open"), TEXT("https://github.com/mengdj/c-lang/releases"), NULL, NULL, SW_SHOWNORMAL);
+			ShellExecute(NULL, TEXT("open"), TEXT("https://github.com/mengdj/decibel"), NULL, NULL, SW_SHOWNORMAL);
 			return TRUE;
 		}
 		else if (szForm.dec_resize_hover) {

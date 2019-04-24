@@ -108,6 +108,22 @@ typedef struct {
 } RING_BUFF;
 
 typedef struct {
+	CHAR			src[512];
+	CHAR			link[512];
+	INT				delay;
+	INT				width;
+	INT				height;
+	INT				start;
+	INT				end;
+	INT				length;
+	INT				ticket;
+	LPBYTE			data;
+	BYTE			buffer[524288];	//512KB
+	RECT			target;
+	BOOL			running;
+} ADVERTISTMENT;
+
+typedef struct {
 	mz_zip_archive		zip;
 	LPVOID				data;
 	BOOL				init;
@@ -156,6 +172,7 @@ MSG_TIP					szMsgTip = { 0 };
 BOOL					szNeedUpdate = FALSE;
 BOOL					szAllowValidate = TRUE;
 CURLcode				szCurlCode = CURL_LAST;
+ADVERTISTMENT* szAdvertisement = NULL;
 
 VOID					ClearGifMemory();
 VOID					CenterWindow(HWND);
@@ -163,6 +180,8 @@ BOOL					CaptureAndBuildPng(HWND, CONST CHAR*);
 BOOL					CaptureForm(HWND, LPBYTE, INT*, INT*, INT*, BOOL);
 HRESULT					CreateShortcut();
 VOID NTAPI				CheckUpdateApp(PTP_CALLBACK_INSTANCE, PVOID);
+size_t					CheckAppProcess(VOID*, size_t, size_t, VOID*);
+size_t					AdvertistmentProcess(VOID*, size_t, size_t, VOID*);
 ATOM					DecRegisterClass(HINSTANCE);
 void					DecibelWaveInProc(HWAVEIN, UINT, DWORD, DWORD, DWORD);
 VOID					DecLog(const char* format, ...);
@@ -550,14 +569,24 @@ BOOL	IsNeedUpdate(const WCHAR* pVer) {
 	return szNeedUpdate;
 }
 
+size_t AdvertistmentProcess(VOID* ptr, size_t size, size_t nmemb, VOID* stream) {
+	ADVERTISTMENT* pAdvertistment = (ADVERTISTMENT*)stream;
+	if (nmemb && pAdvertistment != NULL) {
+		CopyMemory(szAdvertisement->buffer + szAdvertisement->length, ptr, size * nmemb);
+		szAdvertisement->length += size * nmemb;
+	}
+	return size * nmemb;
+}
+
 //检查版本号
 size_t CheckAppProcess(VOID* ptr, size_t size, size_t nmemb, VOID* stream) {
 	//9.9.9
+	HRESULT res = CURL_LAST;
 	cJSON* pApp = cJSON_Parse(ptr);
 	if (pApp != NULL) {
 		cJSON* pProcess = NULL;
 		//获取版本号
-		if ((pProcess = cJSON_GetObjectItem(pApp, "version"))!=NULL) {
+		if ((pProcess = cJSON_GetObjectItem(pApp, "version")) != NULL) {
 			WCHAR wSVer[MAX_LOADSTRING] = { 0 }, wDVer[MAX_LOADSTRING] = { 0 };
 			Char2WChar(pProcess->valuestring, wSVer);
 			CopyMemory(wDVer, wSVer, MAX_LOADSTRING);
@@ -572,8 +601,8 @@ size_t CheckAppProcess(VOID* ptr, size_t size, size_t nmemb, VOID* stream) {
 		if ((pProcess = cJSON_GetObjectItem(pApp, "advertisement")) != NULL) {
 			INT iSize = cJSON_GetArraySize(pProcess);
 			if (iSize) {
-				cJSON* pAdv = NULL,*pTmpAdv;
-				CHAR* cSrc = NULL, * cLink = NULL;
+				cJSON* pTmpAdv = NULL;
+				CHAR* pStr = NULL, * cLink = NULL;
 				INT iDelay = 3000, iWidth = 0, iHeight = 0, iStart = 0, iEnd = 0, iTicket = GetTickCount();
 				for (int i = 0; i < iSize; i++) {
 					if ((pTmpAdv = cJSON_GetArrayItem(pProcess, i)) != NULL) {
@@ -582,16 +611,34 @@ size_t CheckAppProcess(VOID* ptr, size_t size, size_t nmemb, VOID* stream) {
 						if (
 							(iStart && iEnd && (iTicket >= iStart && iTicket <= iEnd)) ||
 							(iStart && !iEnd && iTicket >= iStart) ||
-							(!iStart && iEnd && iTicket <= iEnd)||
+							(!iStart && iEnd && iTicket <= iEnd) ||
 							(!iStart && !iEnd)
 							) {
-							pAdv = pTmpAdv;
+							//解析广告数据
+							if (szAdvertisement == NULL) {
+								szAdvertisement = (ADVERTISTMENT*)malloc(sizeof(ADVERTISTMENT));
+							}
+							szAdvertisement->delay = cJSON_GetObjectItem(pTmpAdv, "delay")->valueint;
+							szAdvertisement->width = cJSON_GetObjectItem(pTmpAdv, "width")->valueint;
+							szAdvertisement->height = cJSON_GetObjectItem(pTmpAdv, "height")->valueint;
+							szAdvertisement->start = cJSON_GetObjectItem(pTmpAdv, "start")->valueint;
+							szAdvertisement->end = cJSON_GetObjectItem(pTmpAdv, "start")->valueint;
+							if ((pStr = cJSON_GetObjectItem(pTmpAdv, "src")->valuestring) != NULL) {
+								strcpy_s(szAdvertisement->src, strlen(pStr) + 1, pStr);
+							}
+							if ((pStr = cJSON_GetObjectItem(pTmpAdv, "link")->valuestring) != NULL) {
+								strcpy_s(szAdvertisement->link, strlen(pStr) + 1, pStr);
+							}
+							szAdvertisement->length = szAdvertisement->ticket = 0;
+							szAdvertisement->running = FALSE;
+							szAdvertisement->target.left = sClientRect.left;
+							szAdvertisement->target.top = sDecValRect.bottom - szAdvertisement->height;
+							szAdvertisement->target.right = szAdvertisement->width;
+							szAdvertisement->target.bottom = sDecValRect.bottom;
+							szAdvertisement->data = NULL;
 							break;
 						}
 					}
-				}
-				if (pAdv) {
-					//P（待处理）
 				}
 			}
 		}
@@ -622,6 +669,53 @@ VOID NTAPI	CheckUpdateApp(PTP_CALLBACK_INSTANCE Instance, PVOID Context) {
 			}
 			curl_easy_cleanup(curl);
 			curl = NULL;
+			if (szAdvertisement != NULL) {
+				curl = curl_easy_init();
+				if ((res = curl_easy_setopt(curl, CURLOPT_URL, szAdvertisement->src)) == CURLE_OK) {
+					if ((res = curl_easy_setopt(curl, CURLOPT_WRITEDATA, szAdvertisement)) == CURLE_OK && (res = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, AdvertistmentProcess)) == CURLE_OK) {
+						if ((res = curl_easy_perform(curl)) == CURLE_OK) {
+							if (szAdvertisement->length) {
+								STB_IMAGE_DATA* sTmpPid = (PSTB_IMAGE_DATA)_aligned_malloc(sizeof(STB_IMAGE_DATA), szAlignBlock);
+								if (sTmpPid != NULL) {
+									memset(sTmpPid, 0, sizeof(STB_IMAGE_DATA));
+									sTmpPid->channel = 4;
+									sTmpPid->data = NULL;
+									sTmpPid->len = szAdvertisement->length;
+									sTmpPid->z = 0;
+									sTmpPid->d = 0;
+									sTmpPid->i = 0;
+									sTmpPid->u = TRUE;
+									//stb解码图片资源
+									sTmpPid->data = stbi_load_from_memory(
+										(stbi_uc*)szAdvertisement->buffer,
+										sTmpPid->len,
+										&sTmpPid->width,
+										&sTmpPid->height,
+										&sTmpPid->comp,
+										sTmpPid->channel
+									);
+									if (sTmpPid->data != NULL) {
+										if (GetBitmapFromRes(sTmpPid) == TRUE) {
+											stbi_image_free(sTmpPid->data);
+											sTmpPid->data = NULL;
+											szAdvertisement->data = sTmpPid;
+											szAdvertisement->ticket = GetTickCount();
+										}
+										else {
+											_aligned_free(sTmpPid);
+										}
+									}
+									else {
+										_aligned_free(sTmpPid);
+									}
+								}
+							}
+						}
+					}
+				}
+				curl_easy_cleanup(curl);
+				curl = NULL;
+			}
 		}
 	}
 }
@@ -1173,6 +1267,18 @@ BOOL UnPreProcessCreate(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 			szHandle[HANDLE_TOOLTIP_WND] = NULL;
 		}
 
+		if (szAdvertisement != NULL) {
+			PSTB_IMAGE_DATA pId = szAdvertisement->data;
+			if (pId != NULL) {
+				if (pId->hBitmap) {
+					DeleteObject(pId->hBitmap);
+				}
+				_aligned_free(pId);
+			}
+			free(szAdvertisement);
+			szAdvertisement = NULL;
+		}
+
 		if (szLog != NULL) {
 			fflush(szLog);
 			fclose(szLog);
@@ -1691,6 +1797,25 @@ BOOL RenderDecFrame(HDC hdc, HDC hMemdc, const LPRECT lPRect) {
 			}
 		}
 	}
+	//广告数据
+	if (szAdvertisement != NULL && szAdvertisement->ticket) {
+		if ((szAdvertisement->delay == 0 && szAdvertisement->ticket) || (GetTickCount() - szAdvertisement->ticket) <= szAdvertisement->delay) {
+			szAdvertisement->running = TRUE;
+			UpdateDeviceContextEx(hMemdc, ((STB_IMAGE_DATA*)szAdvertisement->data)->hBitmap, &szAdvertisement->target);
+		}
+		else {
+			szAdvertisement->running = FALSE;
+			PSTB_IMAGE_DATA pId = szAdvertisement->data;
+			if (pId != NULL) {
+				if (pId->hBitmap) {
+					DeleteObject(pId->hBitmap);
+				}
+				_aligned_free(pId);
+			}
+			free(szAdvertisement);
+			szAdvertisement = NULL;
+		}
+	}
 	return result;
 }
 
@@ -2098,7 +2223,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 		szMouse.c_y = HIWORD(lParam);
 		point.x = szMouse.c_x;
 		point.y = szMouse.c_y;
-		szMsgTip.display = FALSE;
+
+		if (szAdvertisement != NULL) {
+			if (szAdvertisement->running && PtInRect(&szAdvertisement->target, point)) {
+				WCHAR wAdvLink[512];
+				Char2WChar(szAdvertisement->link, wAdvLink);
+				ShellExecute(NULL, TEXT("open"), wAdvLink, NULL, NULL, SW_SHOWNORMAL);
+				break;
+			}
+		}
 		if (InterlockedExchange(&szMsgTip.display, FALSE) == TRUE || InterlockedExchange(&szForm.first_run, FALSE) == TRUE) {
 			InvalidateRectOnce(hWnd, NULL, FALSE);
 			break;

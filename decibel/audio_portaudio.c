@@ -114,7 +114,6 @@ DWORD WINAPI TaskProc(LPVOID lpParameter) {
 
 BOOL Audio_PortAudio_StartDec(DWORD wFormatTag, DWORD nChannels, DWORD nSamplesPerSec, DWORD nBlockAlign, DWORD wBitsPerSample, BOOL bLoopback, DecWaveInProc dwCallback) {
 	PaError iError = 0;
-	INT iFlag = paClipOff;
 	if (!bStart) {
 		ZeroMemory(&rt_ing, sizeof(rt_audio_buff));
 		if (portaudio_init()) {
@@ -125,6 +124,7 @@ BOOL Audio_PortAudio_StartDec(DWORD wFormatTag, DWORD nChannels, DWORD nSamplesP
 			inputParameters.hostApiSpecificStreamInfo = NULL;
 			if (Pa_IsFormatSupported(&inputParameters, NULL, nSamplesPerSec) == paFormatIsSupported) {
 				/*if (bLoopback) {
+					//·ÅÆú»ìÒôÁË
 					PaHostApiIndex iHAC = Pa_GetHostApiCount();
 					while (iHAC > 0) {
 						iHAC -= 1;
@@ -146,7 +146,7 @@ BOOL Audio_PortAudio_StartDec(DWORD wFormatTag, DWORD nChannels, DWORD nSamplesP
 						}
 					}
 				}*/
-				iError = Pa_OpenStream(&pInputStream, &inputParameters, NULL, nSamplesPerSec, FRAGMENT_SIZE, iFlag, InputPaStreamCallback, NULL);
+				iError = Pa_OpenStream(&pInputStream, &inputParameters, NULL, nSamplesPerSec, FRAGMENT_SIZE, paNoFlag, InputPaStreamCallback, NULL);
 				if (iError == paNoError) {
 					InterlockedExchange(&bOpen, TRUE);
 					rt_ing.len = FRAGMENT_SIZE << 4;
@@ -184,7 +184,6 @@ BOOL Audio_PortAudio_StartDec(DWORD wFormatTag, DWORD nChannels, DWORD nSamplesP
 			else {
 				Audio_PortAudio_StopDec();
 			}
-
 		}
 	}
 	return bStart;

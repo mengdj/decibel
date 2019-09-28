@@ -82,7 +82,7 @@
 #include <commctrl.h>
 #pragma comment(lib,"comctl32.lib")
 
-#include <shlobj_core.h>
+#include <Shlobj.h>
 #include "cJSON.h"
 
 #define MAJ_VER					1

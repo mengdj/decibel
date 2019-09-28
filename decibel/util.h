@@ -1,11 +1,26 @@
 #pragma once
 #include "stdafx.h"
-#include "md5.h"
 #ifndef DECIAL_UTIL_H
 #define DECIAL_UTIL_H
 #define MATH_PI				(3.1415926f)
 #define MAXIMUM_CAPACITY	(1<<30)
 #include "miniz.h"
+
+#include "md5c.h"
+VOID MD5(CONST CHAR * pIn, CHAR * pOut, INT iInSize) {
+	//64
+	uint8_t result[16];
+	MD5_CTX md5c;
+	MD5Init(&md5c);
+	MD5UpdaterString(&md5c, pIn);
+	MD5Final(result, &md5c);
+	char buffer[2] = { 0 };
+	for (int i = 0; i < 16; i++) {
+		sprintf_s(buffer, 3, "%2.2x", result[i]);
+		memcpy(pOut, buffer, 2);
+		pOut += 2;
+	}
+}
 
 //大于iCap且是2的次幂
 INT TableSizeFor(INT iCap) {
@@ -16,16 +31,6 @@ INT TableSizeFor(INT iCap) {
 	iCap |= ((unsigned int)iCap) >> 8;
 	iCap |= ((unsigned int)iCap) >> 16;
 	return (iCap < 0) ? 1 : (iCap >= MAXIMUM_CAPACITY) ? MAXIMUM_CAPACITY : iCap + 1;
-}
-VOID MD5(CONST CHAR * pIn, CHAR * pOut, INT iInSize) {
-	uint8_t result[16];
-	md5((uint8_t*)pIn, iInSize, result);
-	char buffer[2] = { 0 };
-	for (int i = 0; i < 16; i++) {
-		sprintf_s(buffer, 3, "%2.2x", result[i]);
-		memcpy(pOut, buffer, 2);
-		pOut += 2;
-	}
 }
 
 time_t SystemTimeToTime_tx(const SYSTEMTIME * pst) {
